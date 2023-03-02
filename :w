@@ -1,0 +1,34 @@
+use ash::{extensions::{
+    ext::DebugUtils,
+    khr::{Surface, Swapchain},
+}, vk::{EntryFnV1_3, InstanceCreateInfo}};
+use ash::{vk, Entry};
+pub use ash::{Device, Instance};
+
+
+pub struct RenderManager
+{
+    //vulkan instantiation for gaia
+    //instance: vk::Instance,
+
+    //logical device that allows gaia to call to a GPU
+    //device: vk::Device,
+
+    //entry: vk::EntryFnV1_3,
+}
+
+
+impl RenderManager {
+    pub fn new() -> Self { 
+        
+        let entry = Entry::linked();
+
+        let instance_ci = InstanceCreateInfo{
+            
+            ..Default::default()
+        };
+        let instance = entry.create_instance(, allocation_callbacks)
+
+        Self {  } 
+    }
+}
