@@ -14,24 +14,24 @@ pub struct RenderInstance
     entry: Entry,
     
     //vulkan instantiation for gaia
-    instance: Instance,
+    instance: Arc<Instance>,
 
     //logical device that allows gaia to call to a GPU
-    device: Device,
+    device: Arc<Device>,
 
-    surface : SurfaceKHR, 
+    surface : Arc<SurfaceKHR>, 
 
     //surface to render objects into screen space
-    window: Window, 
+    window: Arc<Window>, 
 
     surface_loader: Surface,
 
     queue_family_index : u32,
 
-    present_queue : Queue, 
+    present_queue : Arc<Queue>, 
     
     swapchain_loader : Swapchain,
-    swapchain : SwapchainKHR, 
+    swapchain : Arc<SwapchainKHR>, 
     
 }
 
@@ -110,11 +110,11 @@ impl RenderInstance {
         let entry = Entry::linked();
         
         let event_loop = EventLoop::new();
-        let window = WindowBuilder::new()
+        let window = Arc::new( WindowBuilder::new()
             .with_title("Gaia Core Engine")
             .with_inner_size(LogicalSize::new(1024, 768))
             .build(&event_loop)
-            .unwrap();
+            .unwrap());
 
         
         //data for creating instance
@@ -131,14 +131,14 @@ impl RenderInstance {
             .enabled_extension_names(&extensions);
 
         //create instance
-        let instance = unsafe {
+        let instance = Arc::new(unsafe {
             entry.create_instance(&instance_ci, None)
-        }.unwrap();
+        }.unwrap());
 
         
-        let surface = unsafe{
+        let surface = Arc::new( unsafe{
             ash_window::create_surface(&entry, &instance, window.raw_display_handle(), window.raw_window_handle(), None) 
-        }.expect("Unable to create Surface!");
+        }.expect("Unable to create Surface!"));
 
         let surface_loader = Surface::new(&entry, &instance);
 
@@ -167,31 +167,36 @@ impl RenderInstance {
             .enabled_extension_names(&device_extension_names_raw)
             .build();
         
-        let device : Device = unsafe {
+        let device = Arc::new(unsafe {
             instance.create_device(physDev, &dev_ci, None).unwrap()
-        };
+        });
 
-        let present_queue = unsafe{
+        let present_queue = Arc::new( unsafe{
             device.get_device_queue(queue_family_index, 0)
-        };
+        });
 
         let present_types =unsafe { 
-            surface_loader.get_physical_device_surface_present_modes(physDev, surface)
+            surface_loader.get_physical_device_surface_present_modes(physDev, *surface)
         }.expect("No present types found!"); 
 
         let surface_format = unsafe {
-            surface_loader.get_physical_device_surface_formats(physDev, surface)
+            surface_loader.get_physical_device_surface_formats(physDev, *surface)
         }.unwrap()[0];
 
 
         let capabilities = unsafe {
-            surface_loader.get_physical_device_surface_capabilities(physDev, surface)
+            surface_loader.get_physical_device_surface_capabilities(physDev, *surface)
         }.unwrap();
 
-        let mut img_count = capabilities.min_image_count + 1;
-        if img_count > capabilities.max_image_count {
-            img_count = capabilities.max_image_count;
-        }
+        let /*mut*/ img_count = capabilities.min_image_count + 1;
+        //WARN: For whatever reason my drivers have the min image count greater than the max????
+        // i cant clamp max value without the specification yelling at me
+        // imma leave this here commented
+        /*
+            if img_count > capabilities.max_image_count {
+                img_count = capabilities.max_image_count;
+            }
+         */
         
 
         let surface_resolution = match capabilities.current_extent.width {
@@ -210,7 +215,7 @@ impl RenderInstance {
 
 
         let present_modes = unsafe {
-            surface_loader.get_physical_device_surface_present_modes(physDev, surface)
+            surface_loader.get_physical_device_surface_present_modes(physDev, *surface)
         }.unwrap();
 
         let present_mode = present_modes
@@ -224,7 +229,7 @@ impl RenderInstance {
         let swapchain_loader = Swapchain::new(&instance, &device);
         
         let swapchain_ci = vk::SwapchainCreateInfoKHR::builder()
-            .surface(surface)
+            .surface(*surface)
             .min_image_count(img_count)
             .image_color_space(surface_format.color_space)
             .image_format(surface_format.format)
@@ -238,27 +243,30 @@ impl RenderInstance {
             .image_array_layers(1)
             .build();
         
-        let swapchain = unsafe{
+        let swapchain = Arc::new( unsafe{
             swapchain_loader.create_swapchain(&swapchain_ci, None)
-        }.unwrap();
+        }.unwrap());
     
         Arc::new(Self { entry, instance, device , surface, window, surface_loader, queue_family_index, present_queue, swapchain_loader, swapchain}) 
 
     }
     
-    pub fn dev(&self) -> &Device {
-        &self.device
+    pub fn dev(&self) -> Arc<Device> {
+        self.device.clone()
     }
 
+    pub fn inst(&self) -> Arc<Instance> {
+        self.instance.clone()
+    }
 
 }
 
 impl Drop for RenderInstance {
     fn drop(&mut self) {
         unsafe{
-            self.swapchain_loader.destroy_swapchain(self.swapchain, None); 
+            self.swapchain_loader.destroy_swapchain(*self.swapchain.as_ref(), None); 
             self.device.destroy_device(None);
-            self.surface_loader.destroy_surface(self.surface, None);
+            self.surface_loader.destroy_surface(*self.surface.as_ref(), None);
             self.instance.destroy_instance(None);
         }
     }
