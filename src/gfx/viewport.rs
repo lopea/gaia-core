@@ -14,18 +14,18 @@ pub struct Viewport {
     render_inst: Arc<RenderInstance>,
 
     ///reference to the window 
-    win_handle: Arc<Window>,
+    win_handle: Window,
 
-    surface : Arc<SurfaceKHR>, 
+    surface : SurfaceKHR, 
 
-    surface_loader : Arc<Surface>,
+    surface_loader : Surface,
     
     ///reference to all the images used for rendering
-    swapchain: Arc<Mutex<SwapchainKHR>>,
+    swapchain: SwapchainKHR,
 
-    swapchain_images: Vec<Arc<SwapchainImage>>,
+    swapchain_images: Vec<SwapchainImage>,
     ///loads the proper vales from vulkan
-    swapchain_loader: Arc<Swapchain>, 
+    swapchain_loader: Swapchain, 
     
     update_swapchain: bool,
 }
@@ -35,14 +35,14 @@ impl Viewport {
     fn cleanup_swapchain(&mut self)
     {
         unsafe{
-            self.swapchain_loader.destroy_swapchain(*self.swapchain.lock().unwrap(), None);
+            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
         }
     }
 
-    fn create_swapchain(surface: Arc<SurfaceKHR>, 
-                        surface_loader: Arc<Surface>,
+    fn create_swapchain(surface: &SurfaceKHR, 
+                        surface_loader: &Surface,
                         render_inst: Arc<RenderInstance>,
-                        swapchain_loader: Arc<Swapchain>) -> (SwapchainKHR, Vec<Arc<SwapchainImage>>){
+                        swapchain_loader: &Swapchain) -> (SwapchainKHR, Vec<SwapchainImage>){
 
 
         let surface_format = unsafe {
@@ -117,9 +117,9 @@ impl Viewport {
             swapchain_loader.create_swapchain(&swapchain_ci, None)
         }.unwrap();
 
-       let images : Vec<Arc<SwapchainImage>> =  unsafe {
+       let images : Vec<SwapchainImage> =  unsafe {
             let images_raw = swapchain_loader.get_swapchain_images(swapchain).expect("Cannot get swapchain images!");
-            images_raw.iter().map(|image| Arc::new(SwapchainImage::new(image))).collect()
+            images_raw.iter().map(|image| SwapchainImage::new(image)).collect()
         };
 
        (swapchain, images)
@@ -127,12 +127,12 @@ impl Viewport {
     
     fn recreate_swapchain(&mut self) {
         self.cleanup_swapchain();
-        let (newChain, newImg) = Viewport::create_swapchain(self.surface.clone(),
-                                                            self.surface_loader.clone(), 
+        let (newChain, newImg) = Viewport::create_swapchain(&self.surface,
+                                                            &self.surface_loader, 
                                                             self.render_inst.clone(),
-                                                            self.swapchain_loader.clone());
-        let mut chain_data = self.swapchain.lock().unwrap();
-        *chain_data = newChain;
+                                                            &self.swapchain_loader);
+        
+        self.swapchain = newChain;
         self.swapchain_images = newImg;
         self.update_swapchain = false;
     }
@@ -171,30 +171,28 @@ impl Viewport {
     
     pub fn new(event_loop: &EventLoop<()>,render_inst: Arc<RenderInstance>, initial_width: u32, initial_height: u32)  -> Self {
 
-
-
-        let win_handle = Arc::new(WindowBuilder::new()
+        let win_handle = WindowBuilder::new()
             .with_inner_size(LogicalSize::new(initial_width, initial_height))
-            .build(event_loop).unwrap());
+            .build(event_loop).unwrap();
         
 
-        let surface = Arc::new( unsafe{
+        let surface = unsafe{
             ash_window::create_surface(&render_inst.entry(), &render_inst.inst(), 
                                        win_handle.raw_display_handle(), 
                                        win_handle.raw_window_handle(), 
                                        None) 
-        }.expect("Unable to create Surface!"));
+        }.expect("Unable to create Surface!");
 
-        let surface_loader = Arc::new(Surface::new(&render_inst.entry(), &render_inst.inst()));
+        let surface_loader = Surface::new(&render_inst.entry(), &render_inst.inst());
 
 
-        let swapchain_loader = Arc::new(Swapchain::new(&render_inst.inst(),
-         &render_inst.dev()));
+        let swapchain_loader = Swapchain::new(&render_inst.inst(),
+         &render_inst.dev());
         
-        let (swapchain, images) = Viewport::create_swapchain(surface.clone(),
-                                  surface_loader.clone(),
+        let (swapchain, images) = Viewport::create_swapchain(&surface,
+                                  &surface_loader,
                                   render_inst.clone(), 
-                                  swapchain_loader.clone()); 
+                                  &swapchain_loader); 
 
         //create the viewport and send it off!
         Self { 
@@ -202,19 +200,19 @@ impl Viewport {
             win_handle,
             surface,
             surface_loader,
-            swapchain: Arc::new(Mutex::new(swapchain)),
+            swapchain,
             swapchain_images: images,
             swapchain_loader,
             update_swapchain: false
         }
     }
     
-    fn swapchain(&self) -> Arc<Mutex<SwapchainKHR>> {
-         self.swapchain.clone()
+    fn swapchain(&self) -> &SwapchainKHR {
+         &self.swapchain
     }
 
-    fn surface(&self) -> Arc<SurfaceKHR> {
-        self.surface.clone()
+    fn surface(&self) -> &SurfaceKHR{
+        &self.surface
     }
 
     
@@ -228,7 +226,7 @@ impl Drop for Viewport {
              self.cleanup_swapchain();
 
             //destroy the surface
-            self.surface_loader.destroy_surface(*self.surface, None);
+            self.surface_loader.destroy_surface(self.surface, None);
          }
      }
 }

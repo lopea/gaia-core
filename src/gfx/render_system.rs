@@ -11,19 +11,19 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub struct RenderInstance
 {
     //entry point for vulkan     
-    entry: Arc<Entry>,
+    entry: Entry,
     
     //vulkan instantiation for gaia
-    instance: Arc<Instance>,
+    instance: Instance,
 
     //logical device that allows gaia to call to a GPU
-    logical_device: Arc<Device>,
+    logical_device: Device,
 
-    physical_device: Arc<PhysicalDevice>,
+    physical_device: PhysicalDevice,
 
     queue_family_index : u32,
 
-    present_queue : Arc<Queue>, 
+    present_queue : Queue, 
        
 }
 
@@ -52,7 +52,7 @@ impl RenderInstance {
         }
     }
 
-    fn find_pys_device(inst : &Instance, surf: &SurfaceKHR, ent: &Entry, surface_loader : &Surface) -> (Arc<PhysicalDevice>, u32, PhysicalDeviceProperties){
+    fn find_pys_device(inst : &Instance, surf: &SurfaceKHR, ent: &Entry, surface_loader : &Surface) -> (PhysicalDevice, u32, PhysicalDeviceProperties){
 
        unsafe{
            let devices = inst.enumerate_physical_devices().expect("No GPU Devices Found!");
@@ -84,7 +84,7 @@ impl RenderInstance {
 
 
                            if supports_graph_and_surface {
-                               Some((Arc::new(**dev), index as u32, *prop))
+                               Some((**dev, index as u32, *prop))
                            }
                            else {
                                  None
@@ -99,17 +99,19 @@ impl RenderInstance {
     
     pub fn new(event_loop : &EventLoop<()>) -> Arc<Self> { 
         
-        let entry = Arc::new(Entry::linked());
+        let entry = Entry::linked();
         
         let window = WindowBuilder::new()
             .with_title("Gaia Core Engine")
-            .with_inner_size(LogicalSize::new(5, 5))
+            .with_inner_size(LogicalSize::new(1, 1))
             .with_decorations(false)
             .with_active(false)
-            .with_position(LogicalPosition::new(0,0))
+            .with_position(LogicalPosition::new(0,0)) 
             .build(event_loop)
             .unwrap();
         
+        window.set_transparent(true);
+        window.set_minimized(true);
         
         
         //data for creating instance
@@ -126,18 +128,18 @@ impl RenderInstance {
             .enabled_extension_names(&extensions);
 
         //create instance
-        let instance = Arc::new(unsafe {
+        let instance = unsafe {
             entry.create_instance(&instance_ci, None)
-        }.unwrap());
+        }.unwrap();
 
         //create dummy surface
         //
-        let surface =  Arc::new( unsafe{
+        let surface = unsafe{
             ash_window::create_surface(&entry, &instance, 
                                        window.raw_display_handle(), 
                                        window.raw_window_handle(), 
                                        None) 
-        }.expect("Unable to create Surface!"));
+        }.expect("Unable to create Surface!");
 
         let surface_loader = Surface::new(&entry, &instance); 
 
@@ -161,16 +163,16 @@ impl RenderInstance {
             .enabled_extension_names(&device_extension_names_raw)
             .build();
         
-        let logical_device = Arc::new(unsafe {
-            instance.create_device(*physical_device, &dev_ci, None).unwrap()
-        });
+        let logical_device = unsafe {
+            instance.create_device(physical_device, &dev_ci, None).unwrap()
+        };
 
-        let present_queue = Arc::new( unsafe{
+        let present_queue = unsafe{
             logical_device.get_device_queue(queue_family_index, 0)
-        });
+        };
         
         unsafe{
-                surface_loader.destroy_surface(*surface, None);
+                surface_loader.destroy_surface(surface, None);
         }
         Arc::new(Self {
             instance,
@@ -185,25 +187,25 @@ impl RenderInstance {
    
     /// returns the vulkan entry point 
     /// used to query global vulkan properties and instances
-    pub fn entry(&self) -> Arc<Entry> {
-        self.entry.clone()
+    pub fn entry(&self) -> &Entry {
+        &self.entry
     }
 
     ///the current device to get in the 
-    pub fn dev(&self) -> Arc<Device> {
-        self.logical_device.clone()
+    pub fn dev(&self) -> &Device{
+        &self.logical_device
     }
 
-    pub fn inst(&self) -> Arc<Instance> {
-        self.instance.clone()
+    pub fn inst(&self) -> &Instance {
+        &self.instance
     }
 
-    pub fn present_queue(&self) -> Arc<Queue> {
-        self.present_queue.clone()
+    pub fn present_queue(&self) -> &Queue {
+        &self.present_queue
     }
 
-    pub fn physical_dev(&self) -> Arc<PhysicalDevice> {
-        self.physical_device.clone()
+    pub fn physical_dev(&self) -> &PhysicalDevice {
+        &self.physical_device
     }
 
 }
