@@ -11,28 +11,20 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub struct RenderInstance
 {
     //entry point for vulkan     
-    entry: Entry,
+    entry: Arc<Entry>,
     
     //vulkan instantiation for gaia
     instance: Arc<Instance>,
 
     //logical device that allows gaia to call to a GPU
-    device: Arc<Device>,
+    logical_device: Arc<Device>,
 
-    surface : Arc<SurfaceKHR>, 
-
-    //surface to render objects into screen space
-    window: Arc<Window>, 
-
-    surface_loader: Surface,
+    physical_device: Arc<PhysicalDevice>,
 
     queue_family_index : u32,
 
     present_queue : Arc<Queue>, 
-    
-    swapchain_loader : Swapchain,
-    swapchain : Arc<SwapchainKHR>, 
-    
+       
 }
 
 
@@ -60,7 +52,7 @@ impl RenderInstance {
         }
     }
 
-    fn find_pys_device(inst : &Instance, surf: &SurfaceKHR, ent: &Entry, surface_loader : &Surface) -> (PhysicalDevice, u32, PhysicalDeviceProperties){
+    fn find_pys_device(inst : &Instance, surf: &SurfaceKHR, ent: &Entry, surface_loader : &Surface) -> (Arc<PhysicalDevice>, u32, PhysicalDeviceProperties){
 
        unsafe{
            let devices = inst.enumerate_physical_devices().expect("No GPU Devices Found!");
@@ -92,10 +84,10 @@ impl RenderInstance {
 
 
                            if supports_graph_and_surface {
-                               Some((**dev, index as u32, *prop))
+                               Some((Arc::new(**dev), index as u32, *prop))
                            }
                            else {
-                               None
+                                 None
                            }
 
                        })
@@ -105,17 +97,17 @@ impl RenderInstance {
     }
     
     
-    pub fn new() -> Arc<Self> { 
+    pub fn new(event_loop : &EventLoop<()>) -> Arc<Self> { 
         
-        let entry = Entry::linked();
+        let entry = Arc::new(Entry::linked());
         
-        let event_loop = EventLoop::new();
-        let window = Arc::new( WindowBuilder::new()
+        let window = WindowBuilder::new()
             .with_title("Gaia Core Engine")
-            .with_inner_size(LogicalSize::new(1024, 768))
-            .build(&event_loop)
-            .unwrap());
-
+            .with_inner_size(LogicalSize::new(5, 5))
+            .build(event_loop)
+            .unwrap();
+        
+        
         
         //data for creating instance
         let extensions = unsafe {ash_window::enumerate_required_extensions(window.raw_display_handle())
@@ -135,15 +127,18 @@ impl RenderInstance {
             entry.create_instance(&instance_ci, None)
         }.unwrap());
 
-        
-        let surface = Arc::new( unsafe{
-            ash_window::create_surface(&entry, &instance, window.raw_display_handle(), window.raw_window_handle(), None) 
+        //create dummy surface
+        //
+        let surface =  Arc::new( unsafe{
+            ash_window::create_surface(&entry, &instance, 
+                                       window.raw_display_handle(), 
+                                       window.raw_window_handle(), 
+                                       None) 
         }.expect("Unable to create Surface!"));
 
-        let surface_loader = Surface::new(&entry, &instance);
+        let surface_loader = Surface::new(&entry, &instance); 
 
-
-        let (physDev, queue_family_index, devProps) = RenderInstance::find_pys_device(&instance, &surface, &entry, &surface_loader);
+        let (physical_device, queue_family_index, devProps) = RenderInstance::find_pys_device(&instance, &surface, &entry, &surface_loader);
 
         unsafe{
             
@@ -167,96 +162,49 @@ impl RenderInstance {
             .enabled_extension_names(&device_extension_names_raw)
             .build();
         
-        let device = Arc::new(unsafe {
-            instance.create_device(physDev, &dev_ci, None).unwrap()
+        let logical_device = Arc::new(unsafe {
+            instance.create_device(*physical_device, &dev_ci, None).unwrap()
         });
 
         let present_queue = Arc::new( unsafe{
-            device.get_device_queue(queue_family_index, 0)
+            logical_device.get_device_queue(queue_family_index, 0)
         });
-
-        let present_types =unsafe { 
-            surface_loader.get_physical_device_surface_present_modes(physDev, *surface)
-        }.expect("No present types found!"); 
-
-        let surface_format = unsafe {
-            surface_loader.get_physical_device_surface_formats(physDev, *surface)
-        }.unwrap()[0];
-
-
-        let capabilities = unsafe {
-            surface_loader.get_physical_device_surface_capabilities(physDev, *surface)
-        }.unwrap();
-
-        let /*mut*/ img_count = capabilities.min_image_count + 1;
-        //WARN: For whatever reason my drivers have the min image count greater than the max????
-        // i cant clamp max value without the specification yelling at me
-        // imma leave this here commented
-        /*
-            if img_count > capabilities.max_image_count {
-                img_count = capabilities.max_image_count;
-            }
-         */
         
-
-        let surface_resolution = match capabilities.current_extent.width {
-            std::u32::MAX => vk::Extent2D {
-                width: 1024, 
-                height: 768,
-            },
-            _ => capabilities.current_extent,
-        };
-
-        let pre_transform = if capabilities.supported_transforms.contains(vk::SurfaceTransformFlagsKHR::IDENTITY) {
-            vk::SurfaceTransformFlagsKHR::IDENTITY
-        } else {
-            capabilities.current_transform
-        };
-
-
-        let present_modes = unsafe {
-            surface_loader.get_physical_device_surface_present_modes(physDev, *surface)
-        }.unwrap();
-
-        let present_mode = present_modes
-            .iter()
-            .cloned()
-            .find(|&mode| {
-                mode == vk::PresentModeKHR::MAILBOX
-            })
-            .unwrap_or(vk::PresentModeKHR::FIFO);
-
-        let swapchain_loader = Swapchain::new(&instance, &device);
-        
-        let swapchain_ci = vk::SwapchainCreateInfoKHR::builder()
-            .surface(*surface)
-            .min_image_count(img_count)
-            .image_color_space(surface_format.color_space)
-            .image_format(surface_format.format)
-            .image_extent(surface_resolution)
-            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .pre_transform(pre_transform)
-            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(present_mode)
-            .clipped(true)
-            .image_array_layers(1)
-            .build();
-        
-        let swapchain = Arc::new( unsafe{
-            swapchain_loader.create_swapchain(&swapchain_ci, None)
-        }.unwrap());
-    
-        Arc::new(Self { entry, instance, device , surface, window, surface_loader, queue_family_index, present_queue, swapchain_loader, swapchain}) 
+        unsafe{
+        surface_loader.destroy_surface(*surface, None);
+        }
+        Arc::new(Self {
+            instance,
+            entry,
+            logical_device,
+            physical_device,
+            queue_family_index,
+            present_queue
+        }) 
 
     }
-    
+   
+    /// returns the vulkan entry point 
+    /// used to query global vulkan properties and instances
+    pub fn entry(&self) -> Arc<Entry> {
+        self.entry.clone()
+    }
+
+    ///the current device to get in the 
     pub fn dev(&self) -> Arc<Device> {
-        self.device.clone()
+        self.logical_device.clone()
     }
 
     pub fn inst(&self) -> Arc<Instance> {
         self.instance.clone()
+    }
+
+    pub fn present_queue(&self) -> Arc<Queue> {
+        self.present_queue.clone()
+    }
+
+    pub fn physical_dev(&self) -> Arc<PhysicalDevice> {
+        self.physical_device.clone()
     }
 
 }
@@ -264,9 +212,7 @@ impl RenderInstance {
 impl Drop for RenderInstance {
     fn drop(&mut self) {
         unsafe{
-            self.swapchain_loader.destroy_swapchain(*self.swapchain.as_ref(), None); 
-            self.device.destroy_device(None);
-            self.surface_loader.destroy_surface(*self.surface.as_ref(), None);
+            self.logical_device.destroy_device(None);
             self.instance.destroy_instance(None);
         }
     }
