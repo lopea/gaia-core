@@ -4,7 +4,7 @@ use ash::{extensions::{
 }, vk::{EntryFnV1_3, InstanceCreateInfo, ApplicationInfo, make_api_version, PhysicalDeviceType, SurfaceKHR, PhysicalDevice, PhysicalDeviceProperties, DeviceCreateInfo, DeviceQueueCreateInfo, SwapchainKHR, Queue}};
 use ash::{vk, Entry};
 pub use ash::{Device, Instance};
-use winit::{window::{Window, WindowBuilder}, dpi::{Size, LogicalSize}, event_loop::EventLoop};
+use winit::{window::{Window, WindowBuilder}, dpi::{Size, LogicalSize, LogicalPosition}, event_loop::EventLoop};
 use std::{os::raw::c_char, ffi::CStr, sync::Arc, mem::transmute};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
@@ -104,14 +104,17 @@ impl RenderInstance {
         let window = WindowBuilder::new()
             .with_title("Gaia Core Engine")
             .with_inner_size(LogicalSize::new(5, 5))
+            .with_decorations(false)
+            .with_active(false)
+            .with_position(LogicalPosition::new(0,0))
             .build(event_loop)
             .unwrap();
         
         
         
         //data for creating instance
-        let extensions = unsafe {ash_window::enumerate_required_extensions(window.raw_display_handle())
-            .expect("unable to get extensions!")};
+        let extensions = ash_window::enumerate_required_extensions(window.raw_display_handle())
+            .expect("unable to get extensions!");
         let app_info = RenderInstance::get_application_info();
         let layer_names = RenderInstance::get_layer_names();
 
@@ -140,10 +143,6 @@ impl RenderInstance {
 
         let (physical_device, queue_family_index, devProps) = RenderInstance::find_pys_device(&instance, &surface, &entry, &surface_loader);
 
-        unsafe{
-            
-            println!("Device Name: {}", String::from_utf8(std::mem::transmute(devProps.device_name.to_vec())).unwrap());
-                 }
         let priority = [1.0f32];
 
         let queue_ci = DeviceQueueCreateInfo::builder()
@@ -171,7 +170,7 @@ impl RenderInstance {
         });
         
         unsafe{
-        surface_loader.destroy_surface(*surface, None);
+                surface_loader.destroy_surface(*surface, None);
         }
         Arc::new(Self {
             instance,
